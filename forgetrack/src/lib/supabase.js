@@ -9,4 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+  auth: {
+    // Speed up lock acquisition timeout to prevent hangs in dev
+    lockAcquireTimeout: 5000,
+    // Use a unique storage key to avoid conflicts
+    storageKey: 'forgetrack-auth',
+  },
+});
