@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Card } from '../../components/ui/Card';
@@ -9,14 +10,16 @@ import { DatePicker } from '../../components/ui/DatePicker';
 import { useToast } from '../../components/ui/ToastProvider';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { Checkbox } from '../../components/ui/Checkbox';
-import { Save, Plus, Search, CheckSquare } from 'lucide-react';
+import { Save, Plus, Search, CheckSquare, Edit2, X, Check } from 'lucide-react';
 import { PROGRAM_START_DATE, SESSION_TYPES } from '../../lib/constants';
 
 export function MarkAttendancePage() {
   const { user } = useAuth();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const [date, setDate] = useState(initialDate);
   const [session, setSession] = useState(null); // The actual session object for the date
   const [students, setStudents] = useState([]);
   const [attendance, setAttendance] = useState({}); // { studentId: boolean }
@@ -28,8 +31,21 @@ export function MarkAttendancePage() {
   const [newTopic, setNewTopic] = useState('');
   const [newType, setNewType] = useState('offline');
 
+  // For editing existing session
+  const [isEditingTopic, setIsEditingTopic] = useState(false);
+  const [editTopicValue, setEditTopicValue] = useState('');
+
   // Search filter
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Update URL when date changes
+  useEffect(() => {
+    if (date !== new Date().toISOString().split('T')[0]) {
+      setSearchParams({ date });
+    } else {
+      setSearchParams({});
+    }
+  }, [date, setSearchParams]);
 
   // 1. Fetch all active students once
   useEffect(() => {
@@ -170,6 +186,31 @@ export function MarkAttendancePage() {
     }
   };
 
+  // 5. Update session topic
+  const handleUpdateTopic = async () => {
+    if (!editTopicValue.trim() || !session) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('sessions')
+        .update({ topic: editTopicValue })
+        .eq('id', session.id)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      setSession(data);
+      setIsEditingTopic(false);
+      toast.success('Session name updated');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to update session name');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Toggle individual student
   const toggleStudent = (studentId) => {
     setAttendance(prev => ({
@@ -224,7 +265,34 @@ export function MarkAttendancePage() {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="text-label uppercase text-fg-secondary">Current Session</span>
-                  <span className="text-body font-medium text-fg-primary break-words">{session.topic}</span>
+                  
+                  {isEditingTopic ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <Input 
+                        value={editTopicValue}
+                        onChange={(e) => setEditTopicValue(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => e.key === 'Enter' && handleUpdateTopic()}
+                        className="flex-1"
+                      />
+                      <button onClick={handleUpdateTopic} disabled={saving} className="p-1.5 bg-success-bg text-success rounded hover:bg-success/20">
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setIsEditingTopic(false)} className="p-1.5 bg-surface-inset text-fg-secondary rounded hover:text-fg-primary">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between group">
+                      <span className="text-body font-medium text-fg-primary break-words pr-2">{session.topic}</span>
+                      <button 
+                        onClick={() => { setEditTopicValue(session.topic); setIsEditingTopic(true); }}
+                        className="p-1 text-fg-tertiary opacity-0 group-hover:opacity-100 transition-opacity hover:text-fg-primary"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="px-2 py-0.5 rounded bg-surface-inset border border-border text-micro uppercase tracking-wider text-fg-secondary">
