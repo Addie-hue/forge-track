@@ -31,6 +31,11 @@ export function AuthProvider({ children }) {
 
   // Initialize auth state
   useEffect(() => {
+    // Safety timeout: force loading to false after 3 seconds no matter what
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
     // Get current session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const authUser = session?.user ?? null;
@@ -55,10 +60,14 @@ export function AuthProvider({ children }) {
         } else {
           setProfile(null);
         }
+        setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Login with email + password
