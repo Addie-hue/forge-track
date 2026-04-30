@@ -160,8 +160,8 @@ export function CsvUploadPage() {
       const sessionRecords = uniqueDates.map(col => ({
         date: dateMap[col],
         topic: `Imported: ${col}`,
-        type: 'offline',
-        created_by: user.id
+        month_number: 1,
+        session_type: 'offline'
       }));
 
       // We need to insert them one by one to get their IDs, or bulk insert and fetch
@@ -200,7 +200,7 @@ export function CsvUploadPage() {
             student_id: studentId,
             session_id: sessionId,
             present: record.present,
-            updated_by: user.id
+            marked_by: user.id
           });
         } else {
           skippedRecords++;
@@ -220,10 +220,12 @@ export function CsvUploadPage() {
 
       // 5. Log Import
       await supabase.from('import_log').insert({
-        file_name: file.name,
-        rows_processed: parsedData.length,
-        status: 'success',
-        imported_by: user.id
+        filename: file.name,
+        uploaded_by: user.displayName || 'Mentor',
+        total_rows: parsedData.length,
+        imported_rows: attendanceRecords.length,
+        skipped_rows: skippedRecords,
+        status: 'completed'
       });
 
       toast.success(`Imported ${attendanceRecords.length} records successfully!`);
@@ -238,10 +240,12 @@ export function CsvUploadPage() {
       
       // Log failure
       await supabase.from('import_log').insert({
-        file_name: file.name,
-        rows_processed: parsedData.length,
-        status: 'failed',
-        imported_by: user.id
+        filename: file.name,
+        uploaded_by: user.displayName || 'Mentor',
+        total_rows: parsedData.length,
+        imported_rows: 0,
+        skipped_rows: 0,
+        status: 'failed'
       });
     } finally {
       setLoading(false);

@@ -111,8 +111,8 @@ export function MarkAttendancePage() {
         .insert({
           date,
           topic: newTopic,
-          type: newType,
-          created_by: user.id
+          month_number: 1,
+          session_type: newType
         })
         .select()
         .single();
@@ -152,7 +152,7 @@ export function MarkAttendancePage() {
           session_id: session.id,
           student_id: student.id,
           present: isPresent,
-          updated_by: user.id,
+          marked_by: user.id,
         };
       });
 
@@ -228,7 +228,7 @@ export function MarkAttendancePage() {
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="px-2 py-0.5 rounded bg-surface-inset border border-border text-micro uppercase tracking-wider text-fg-secondary">
-                    {session.type}
+                    {session.session_type}
                   </span>
                 </div>
               </div>

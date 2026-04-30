@@ -36,7 +36,7 @@ export function MyAttendancePage() {
         // Note: Students can read all sessions via RLS
         const { data: allSessions, error: sessError } = await supabase
           .from('sessions')
-          .select('id, date, topic, type')
+          .select('id, date, topic, session_type')
           .order('date', { ascending: false });
           
         if (sessError) throw sessError;
@@ -190,7 +190,7 @@ export function MyAttendancePage() {
                       </TableCell>
                       <TableCell>
                         <span className="text-micro uppercase text-fg-tertiary tracking-wider bg-surface-inset px-2 py-1 rounded">
-                          {sess.type}
+                          {sess.session_type}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">

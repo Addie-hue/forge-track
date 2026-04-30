@@ -82,15 +82,15 @@ export function UpcomingPage() {
                 
                 <div className="mt-auto flex items-center justify-between pt-4 border-t border-border">
                   <span className={`px-2.5 py-1 rounded-md text-caption uppercase tracking-wider border ${
-                    sess.type === 'offline' ? 'bg-surface-inset text-fg-secondary border-border' : 
-                    sess.type === 'online' ? 'bg-info-bg text-info border-info-border' : 
+                    sess.session_type === 'offline' ? 'bg-surface-inset text-fg-secondary border-border' : 
+                    sess.session_type === 'online' ? 'bg-info-bg text-info border-info-border' : 
                     'bg-warning-bg text-warning border-warning-border'
                   }`}>
-                    {sess.type}
+                    {sess.session_type}
                   </span>
                   
                   <div className="flex items-center gap-1.5 text-caption text-fg-tertiary">
-                    {sess.type === 'offline' ? (
+                    {sess.session_type === 'offline' ? (
                       <><MapPin className="w-3.5 h-3.5" /> Campus</>
                     ) : (
                       <><Clock className="w-3.5 h-3.5" /> TBA</>
