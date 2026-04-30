@@ -29,17 +29,12 @@ export function LoginPage() {
 
       await login(emailToUse, password);
       
-      // The ProtectedRoute logic in App.jsx will handle redirecting 
-      // based on role, but we can also manually navigate if needed.
-      // Wait a tiny bit for the AuthContext to fetch the profile
-      setTimeout(() => {
-        if (activeTab === 'student' && password === identifier.toUpperCase()) {
-          navigate('/change-password');
-        } else {
-          navigate('/'); // App.jsx will route to correct dashboard
-        }
-      }, 500);
-
+      // Profile is now loaded — navigate immediately
+      if (activeTab === 'student' && password === identifier.toUpperCase()) {
+        navigate('/change-password');
+      } else {
+        navigate('/');
+      }
     } catch (error) {
       toast.error('Invalid credentials. Please try again.');
       console.error(error);

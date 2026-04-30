@@ -72,11 +72,19 @@ export function AuthProvider({ children }) {
 
   // Login with email + password
   async function login(email, password) {
+    setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (error) throw error;
+    if (error) {
+      setLoading(false);
+      throw error;
+    }
+    // Eagerly set user + profile so we don't depend on the listener
+    setUser(data.user);
+    await fetchProfile(data.user);
+    setLoading(false);
     return data;
   }
 

@@ -9,4 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+  auth: {
+    // Disable the navigator lock — it deadlocks under React StrictMode
+    // because StrictMode double-mounts, creating two competing lock requests.
+    lock: 'no-op',
+    storageKey: 'forgetrack-auth',
+  },
+});
