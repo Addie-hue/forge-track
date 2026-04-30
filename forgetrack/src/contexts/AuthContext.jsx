@@ -73,17 +73,27 @@ export function AuthProvider({ children }) {
   // Login with email + password
   async function login(email, password) {
     setLoading(true);
+    console.log('[Auth] Starting login for:', email);
+    
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    
     if (error) {
+      console.error('[Auth] Login error:', error.message);
       setLoading(false);
       throw error;
     }
-    // Eagerly set user + profile so we don't depend on the listener
+    
+    console.log('[Auth] Login successful, user ID:', data.user.id);
     setUser(data.user);
-    await fetchProfile(data.user);
+    
+    // Eagerly fetch profile
+    console.log('[Auth] Fetching profile...');
+    const profile = await fetchProfile(data.user);
+    console.log('[Auth] Profile result:', profile);
+    
     setLoading(false);
     return data;
   }
