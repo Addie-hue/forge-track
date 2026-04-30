@@ -184,7 +184,7 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="mt-auto pt-4 flex gap-3">
-                <Button onClick={() => navigate('/attendance')} className="w-full">
+                <Button onClick={() => navigate(`/attendance?date=${todaySession.date}`)} className="w-full">
                   Update Attendance
                 </Button>
               </div>
@@ -262,7 +262,7 @@ export function DashboardPage() {
             ) : recentSessions.length > 0 ? (
               <div className="space-y-3">
                 {recentSessions.map(session => (
-                  <div key={session.id} className="p-4 rounded-lg bg-surface-inset border border-border flex items-center justify-between group hover:border-border-strong transition-colors cursor-pointer" onClick={() => navigate('/attendance')}>
+                  <div key={session.id} className="p-4 rounded-lg bg-surface-inset border border-border flex items-center justify-between group hover:border-border-strong transition-colors cursor-pointer" onClick={() => navigate(`/attendance?date=${session.date}`)}>
                     <div className="flex flex-col gap-1 overflow-hidden pr-4">
                       <span className="text-body font-medium text-fg-primary truncate">{session.topic}</span>
                       <span className="text-caption text-fg-tertiary">{format(parseISO(session.date), 'MMM d, yyyy')}</span>
