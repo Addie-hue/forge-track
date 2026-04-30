@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Card } from '../../components/ui/Card';
@@ -18,7 +19,7 @@ export function MarkAttendancePage() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const initialDate = searchParams.get('date') || format(new Date(), 'yyyy-MM-dd');
   const [date, setDate] = useState(initialDate);
   const [session, setSession] = useState(null); // The actual session object for the date
   const [students, setStudents] = useState([]);
@@ -40,7 +41,7 @@ export function MarkAttendancePage() {
 
   // Update URL when date changes
   useEffect(() => {
-    if (date !== new Date().toISOString().split('T')[0]) {
+    if (date !== format(new Date(), 'yyyy-MM-dd')) {
       setSearchParams({ date });
     } else {
       setSearchParams({});

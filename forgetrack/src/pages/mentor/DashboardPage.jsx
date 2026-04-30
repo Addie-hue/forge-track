@@ -62,7 +62,7 @@ export function DashboardPage() {
           : 0;
 
         // 4. Fetch Today's Session
-        const today = new Date().toISOString().split('T')[0];
+        const today = format(new Date(), 'yyyy-MM-dd');
         const { data: todaySess } = await supabase
           .from('sessions')
           .select('*')
