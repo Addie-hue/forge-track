@@ -1,24 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import { AppShell } from './components/layout/AppShell';
 
-// Pages
-import { LoginPage } from './pages/LoginPage';
-import { ForbiddenPage } from './pages/ForbiddenPage';
-import { ChangePasswordPage } from './pages/ChangePasswordPage';
+// Pages - Lazy Loaded
+const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ForbiddenPage = lazy(() => import('./pages/ForbiddenPage').then(m => ({ default: m.ForbiddenPage })));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage').then(m => ({ default: m.ChangePasswordPage })));
 
-// Mentor Pages
-import { DashboardPage } from './pages/mentor/DashboardPage';
-import { MarkAttendancePage } from './pages/mentor/MarkAttendancePage';
-import { StudentHistoryPage } from './pages/mentor/StudentHistoryPage';
-import { MaterialsPage } from './pages/mentor/MaterialsPage';
-import { CsvUploadPage } from './pages/mentor/CsvUploadPage';
+// Mentor Pages - Lazy Loaded
+const DashboardPage = lazy(() => import('./pages/mentor/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const MarkAttendancePage = lazy(() => import('./pages/mentor/MarkAttendancePage').then(m => ({ default: m.MarkAttendancePage })));
+const StudentHistoryPage = lazy(() => import('./pages/mentor/StudentHistoryPage').then(m => ({ default: m.StudentHistoryPage })));
+const MaterialsPage = lazy(() => import('./pages/mentor/MaterialsPage').then(m => ({ default: m.MaterialsPage })));
+const CsvUploadPage = lazy(() => import('./pages/mentor/CsvUploadPage').then(m => ({ default: m.CsvUploadPage })));
 
-// Student Pages
-import { MyAttendancePage } from './pages/student/MyAttendancePage';
-import { UpcomingPage } from './pages/student/UpcomingPage';
-import { MyMaterialsPage } from './pages/student/MyMaterialsPage';
+// Student Pages - Lazy Loaded
+const MyAttendancePage = lazy(() => import('./pages/student/MyAttendancePage').then(m => ({ default: m.MyAttendancePage })));
+const UpcomingPage = lazy(() => import('./pages/student/UpcomingPage').then(m => ({ default: m.UpcomingPage })));
+const MyMaterialsPage = lazy(() => import('./pages/student/MyMaterialsPage').then(m => ({ default: m.MyMaterialsPage })));
 
 // Loader
 import { Hexagon } from 'lucide-react';
@@ -63,99 +63,101 @@ function RootRedirect() {
 
 export default function App() {
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/403" element={<ForbiddenPage />} />
+    <Suspense fallback={<FullScreenLoader />}>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/403" element={<ForbiddenPage />} />
 
-      {/* Must be authenticated to change password */}
-      <Route 
-        path="/change-password" 
-        element={
-          <ProtectedRoute>
-            <ChangePasswordPage />
-          </ProtectedRoute>
-        } 
-      />
-
-      {/* Root redirect */}
-      <Route path="/" element={<RootRedirect />} />
-
-      {/* App Shell Routes (Protected) */}
-      <Route element={<AppShell />}>
-        
-        {/* Mentor Only Routes */}
+        {/* Must be authenticated to change password */}
         <Route 
-          path="/dashboard" 
+          path="/change-password" 
           element={
-            <ProtectedRoute allowedRoles={['mentor']}>
-              <DashboardPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/attendance" 
-          element={
-            <ProtectedRoute allowedRoles={['mentor']}>
-              <MarkAttendancePage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/history" 
-          element={
-            <ProtectedRoute allowedRoles={['mentor']}>
-              <StudentHistoryPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/materials" 
-          element={
-            <ProtectedRoute allowedRoles={['mentor']}>
-              <MaterialsPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/upload" 
-          element={
-            <ProtectedRoute allowedRoles={['mentor']}>
-              <CsvUploadPage />
+            <ProtectedRoute>
+              <ChangePasswordPage />
             </ProtectedRoute>
           } 
         />
 
-        {/* Student Only Routes */}
-        <Route 
-          path="/me/attendance" 
-          element={
-            <ProtectedRoute allowedRoles={['student']}>
-              <MyAttendancePage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/me/upcoming" 
-          element={
-            <ProtectedRoute allowedRoles={['student']}>
-              <UpcomingPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/me/materials" 
-          element={
-            <ProtectedRoute allowedRoles={['student']}>
-              <MyMaterialsPage />
-            </ProtectedRoute>
-          } 
-        />
+        {/* Root redirect */}
+        <Route path="/" element={<RootRedirect />} />
 
-      </Route>
+        {/* App Shell Routes (Protected) */}
+        <Route element={<AppShell />}>
+          
+          {/* Mentor Only Routes */}
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute allowedRoles={['mentor']}>
+                <DashboardPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/attendance" 
+            element={
+              <ProtectedRoute allowedRoles={['mentor']}>
+                <MarkAttendancePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/history" 
+            element={
+              <ProtectedRoute allowedRoles={['mentor']}>
+                <StudentHistoryPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/materials" 
+            element={
+              <ProtectedRoute allowedRoles={['mentor']}>
+                <MaterialsPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/upload" 
+            element={
+              <ProtectedRoute allowedRoles={['mentor']}>
+                <CsvUploadPage />
+              </ProtectedRoute>
+            } 
+          />
 
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          {/* Student Only Routes */}
+          <Route 
+            path="/me/attendance" 
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <MyAttendancePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/me/upcoming" 
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <UpcomingPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/me/materials" 
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <MyMaterialsPage />
+              </ProtectedRoute>
+            } 
+          />
+
+        </Route>
+
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

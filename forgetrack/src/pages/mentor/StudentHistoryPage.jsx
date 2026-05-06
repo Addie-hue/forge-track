@@ -39,32 +39,30 @@ export function StudentHistoryPage() {
       if (!selectedStudent) return;
       setLoading(true);
       try {
-        // Fetch all sessions
-        const { data: allSessions, error: sessError } = await supabase
-          .from('sessions')
-          .select('id, date, topic, session_type')
-          .order('date', { ascending: false });
+        // Fetch all sessions and attendance for this student in parallel
+        const [
+          { data: allSessions, error: sessError },
+          { data: attendance, error: attError }
+        ] = await Promise.all([
+          supabase.from('sessions').select('id, date, topic, session_type').order('date', { ascending: false }),
+          supabase.from('attendance').select('session_id, present').eq('student_id', selectedStudent.id)
+        ]);
           
         if (sessError) throw sessError;
-
-        // Fetch attendance for this student
-        const { data: attendance, error: attError } = await supabase
-          .from('attendance')
-          .select('session_id, present')
-          .eq('student_id', selectedStudent.id);
-          
         if (attError) throw attError;
 
         // Map attendance to sessions
         const attMap = {};
-        attendance.forEach(a => {
-          attMap[a.session_id] = a.present;
-        });
+        if (attendance) {
+          attendance.forEach(a => {
+            attMap[a.session_id] = a.present;
+          });
+        }
 
         let presentCount = 0;
         let totalCount = 0;
 
-        const mergedHistory = allSessions.map(sess => {
+        const mergedHistory = (allSessions || []).map(sess => {
           const present = attMap[sess.id];
           if (present !== undefined) {
             totalCount++;

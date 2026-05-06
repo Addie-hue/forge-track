@@ -21,44 +21,37 @@ export function MyAttendancePage() {
       if (!studentId) return;
       setLoading(true);
       try {
-        // 1. Fetch student info
-        const { data: studentData, error: stuError } = await supabase
-          .from('students')
-          .select('*')
-          .eq('id', studentId)
-          .single();
+        // Fetch student info, all sessions, and attendance in parallel
+        const [
+          { data: studentData, error: stuError },
+          { data: allSessions, error: sessError },
+          { data: attendance, error: attError }
+        ] = await Promise.all([
+          supabase.from('students').select('*').eq('id', studentId).single(),
+          supabase.from('sessions').select('id, date, topic, session_type').order('date', { ascending: false }),
+          supabase.from('attendance').select('session_id, present').eq('student_id', studentId)
+        ]);
           
-        if (!stuError && studentData) {
+        if (stuError) throw stuError;
+        if (sessError) throw sessError;
+        if (attError) throw attError;
+
+        if (studentData) {
           setStudentInfo(studentData);
         }
 
-        // 2. Fetch all sessions (so we know total classes held)
-        // Note: Students can read all sessions via RLS
-        const { data: allSessions, error: sessError } = await supabase
-          .from('sessions')
-          .select('id, date, topic, session_type')
-          .order('date', { ascending: false });
-          
-        if (sessError) throw sessError;
-
-        // 3. Fetch this student's attendance records
-        const { data: attendance, error: attError } = await supabase
-          .from('attendance')
-          .select('session_id, present')
-          .eq('student_id', studentId);
-          
-        if (attError) throw attError;
-
         // Map attendance to sessions
         const attMap = {};
-        attendance.forEach(a => {
-          attMap[a.session_id] = a.present;
-        });
+        if (attendance) {
+          attendance.forEach(a => {
+            attMap[a.session_id] = a.present;
+          });
+        }
 
         let presentCount = 0;
         let totalCount = 0;
 
-        const mergedHistory = allSessions.map(sess => {
+        const mergedHistory = (allSessions || []).map(sess => {
           const present = attMap[sess.id];
           if (present !== undefined) {
             totalCount++;

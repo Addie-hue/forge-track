@@ -74,7 +74,7 @@ export function MarkAttendancePage() {
       setAttendance({});
       
       try {
-        // Find session for this date
+        // 1. Find session for this date
         const { data: sessionData, error: sessionError } = await supabase
           .from('sessions')
           .select('*')
@@ -86,10 +86,10 @@ export function MarkAttendancePage() {
         setSession(sessionData);
 
         if (sessionData) {
-          // Fetch attendance records for this session
+          // 2. Fetch attendance records for this session
           const { data: attData, error: attError } = await supabase
             .from('attendance')
-            .select('*')
+            .select('student_id, present')
             .eq('session_id', sessionData.id);
             
           if (attError) throw attError;

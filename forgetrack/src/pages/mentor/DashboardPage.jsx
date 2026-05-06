@@ -28,81 +28,87 @@ export function DashboardPage() {
     async function fetchDashboardData() {
       try {
         setLoading(true);
+        const today = format(new Date(), 'yyyy-MM-dd');
         
-        // 1. Fetch Students count
-        const { count: studentsCount } = await supabase
-          .from('students')
-          .select('*', { count: 'exact', head: true })
-          .eq('is_active', true);
+        // 1. Fire off independent queries in parallel
+        const [
+          { count: studentsCount },
+          { count: sessionsCount },
+          { data: lastSession },
+          { count: presentCount },
+          { count: totalAttendanceCount },
+          { data: todaySess },
+          { data: recent }
+        ] = await Promise.all([
+          // Students count
+          supabase.from('students').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          // Sessions count
+          supabase.from('sessions').select('*', { count: 'exact', head: true }),
+          // Last Session
+          supabase.from('sessions').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
+          // Overall Attendance: Present
+          supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('present', true),
+          // Overall Attendance: Total
+          supabase.from('attendance').select('*', { count: 'exact', head: true }),
+          // Today's Session
+          supabase.from('sessions').select('*').eq('date', today).maybeSingle(),
+          // Recent Sessions
+          supabase.from('sessions').select('*').order('date', { ascending: false }).limit(5)
+        ]);
 
-        // 2. Fetch Sessions count & Last Session
-        const { count: sessionsCount } = await supabase
-          .from('sessions')
-          .select('*', { count: 'exact', head: true });
-          
-        const { data: lastSession } = await supabase
-          .from('sessions')
-          .select('date')
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // 3. Fetch Overall Attendance Rate
-        const { count: presentCount } = await supabase
-          .from('attendance')
-          .select('*', { count: 'exact', head: true })
-          .eq('present', true);
-          
-        const { count: totalAttendanceCount } = await supabase
-          .from('attendance')
-          .select('*', { count: 'exact', head: true });
-
+        // 2. Process results
         const overallRate = totalAttendanceCount > 0 
           ? Math.round((presentCount / totalAttendanceCount) * 100) 
           : 0;
 
-        // 4. Fetch Today's Session
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const { data: todaySess } = await supabase
-          .from('sessions')
-          .select('*')
-          .eq('date', today)
-          .maybeSingle();
-          
+        setStats({
+          activeStudents: studentsCount || 0,
+          totalSessions: sessionsCount || 0,
+          attendanceRate: overallRate,
+          lastSessionDate: lastSession ? lastSession.date : null
+        });
+
+        // 3. Dependent fetches (can also be parallelized if there are multiple)
+        const secondaryPromises = [];
+
         if (todaySess) {
           setTodaySession(todaySess);
-          // Get today's attendance stats
-          const { count: todayPresent } = await supabase
-            .from('attendance')
-            .select('*', { count: 'exact', head: true })
-            .eq('session_id', todaySess.id)
-            .eq('present', true);
-            
-          const { count: todayTotal } = await supabase
-            .from('attendance')
-            .select('*', { count: 'exact', head: true })
-            .eq('session_id', todaySess.id);
-            
+          secondaryPromises.push(
+            supabase.from('attendance')
+              .select('*', { count: 'exact', head: true })
+              .eq('session_id', todaySess.id)
+              .eq('present', true)
+              .then(({ count: tp }) => tp),
+            supabase.from('attendance')
+              .select('*', { count: 'exact', head: true })
+              .eq('session_id', todaySess.id)
+              .then(({ count: tt }) => tt)
+          );
+        }
+
+        if (recent && recent.length > 0) {
+          const sessionIds = recent.map(s => s.id);
+          secondaryPromises.push(
+            supabase.from('attendance')
+              .select('session_id, present')
+              .in('session_id', sessionIds)
+              .then(({ data }) => data)
+          );
+        }
+
+        const secondaryResults = await Promise.all(secondaryPromises);
+        
+        let resultIdx = 0;
+        if (todaySess) {
+          const todayPresent = secondaryResults[resultIdx++];
+          const todayTotal = secondaryResults[resultIdx++];
           if (todayTotal > 0) {
             setTodayAttendanceRate(Math.round((todayPresent / todayTotal) * 100));
           }
         }
 
-        // 5. Fetch Recent Sessions (up to 5)
-        const { data: recent } = await supabase
-          .from('sessions')
-          .select('*')
-          .order('date', { ascending: false })
-          .limit(5);
-
         if (recent && recent.length > 0) {
-          // Fetch attendance for these sessions to calculate rate
-          const sessionIds = recent.map(s => s.id);
-          const { data: recentAttendance } = await supabase
-            .from('attendance')
-            .select('session_id, present')
-            .in('session_id', sessionIds);
-            
+          const recentAttendance = secondaryResults[resultIdx++];
           const enrichedRecent = recent.map(session => {
             const sessionAttendance = recentAttendance.filter(a => a.session_id === session.id);
             const present = sessionAttendance.filter(a => a.present).length;
@@ -112,13 +118,6 @@ export function DashboardPage() {
           });
           setRecentSessions(enrichedRecent);
         }
-
-        setStats({
-          activeStudents: studentsCount || 0,
-          totalSessions: sessionsCount || 0,
-          attendanceRate: overallRate,
-          lastSessionDate: lastSession ? lastSession.date : null
-        });
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
