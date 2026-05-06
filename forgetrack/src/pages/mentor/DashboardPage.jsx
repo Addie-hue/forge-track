@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -24,112 +24,81 @@ export function DashboardPage() {
   const [recentSessions, setRecentSessions] = useState([]);
   const [todayAttendanceRate, setTodayAttendanceRate] = useState(null);
 
-  useEffect(() => {
-    async function fetchDashboardData() {
-      try {
-        setLoading(true);
-        const today = format(new Date(), 'yyyy-MM-dd');
-        
-        // 1. Fire off independent queries in parallel
-        const [
-          { count: studentsCount },
-          { count: sessionsCount },
-          { data: lastSession },
-          { count: presentCount },
-          { count: totalAttendanceCount },
-          { data: todaySess },
-          { data: recent }
-        ] = await Promise.all([
-          // Students count
-          supabase.from('students').select('*', { count: 'exact', head: true }).eq('is_active', true),
-          // Sessions count
-          supabase.from('sessions').select('*', { count: 'exact', head: true }),
-          // Last Session
-          supabase.from('sessions').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
-          // Overall Attendance: Present
-          supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('present', true),
-          // Overall Attendance: Total
-          supabase.from('attendance').select('*', { count: 'exact', head: true }),
-          // Today's Session
-          supabase.from('sessions').select('*').eq('date', today).maybeSingle(),
-          // Recent Sessions
-          supabase.from('sessions').select('*').order('date', { ascending: false }).limit(5)
-        ]);
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const today = format(new Date(), 'yyyy-MM-dd');
+      
+      const [studentsRes, sessionsRes, lastSessRes, presentRes, totalAttRes, todaySessRes, recentRes] = await Promise.all([
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from('sessions').select('id', { count: 'exact', head: true }),
+        supabase.from('sessions').select('date').order('date', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('attendance').select('id', { count: 'exact', head: true }).eq('present', true),
+        supabase.from('attendance').select('id', { count: 'exact', head: true }),
+        supabase.from('sessions').select('id, topic, date, session_type').eq('date', today).maybeSingle(),
+        supabase.from('sessions').select('id, topic, date, session_type').order('date', { ascending: false }).limit(5)
+      ]);
 
-        // 2. Process results
-        const overallRate = totalAttendanceCount > 0 
-          ? Math.round((presentCount / totalAttendanceCount) * 100) 
-          : 0;
+      const overallRate = totalAttRes.count > 0 ? Math.round((presentRes.count / totalAttRes.count) * 100) : 0;
+      
+      setStats({
+        activeStudents: studentsRes.count || 0,
+        totalSessions: sessionsRes.count || 0,
+        attendanceRate: overallRate,
+        lastSessionDate: lastSessRes.data?.date || null
+      });
 
-        setStats({
-          activeStudents: studentsCount || 0,
-          totalSessions: sessionsCount || 0,
-          attendanceRate: overallRate,
-          lastSessionDate: lastSession ? lastSession.date : null
-        });
+      const todaySess = todaySessRes.data;
+      const recent = recentRes.data || [];
 
-        // 3. Dependent fetches (can also be parallelized if there are multiple)
-        const secondaryPromises = [];
-
-        if (todaySess) {
-          setTodaySession(todaySess);
-          secondaryPromises.push(
-            supabase.from('attendance')
-              .select('*', { count: 'exact', head: true })
-              .eq('session_id', todaySess.id)
-              .eq('present', true)
-              .then(({ count: tp }) => tp),
-            supabase.from('attendance')
-              .select('*', { count: 'exact', head: true })
-              .eq('session_id', todaySess.id)
-              .then(({ count: tt }) => tt)
-          );
-        }
-
-        if (recent && recent.length > 0) {
-          const sessionIds = recent.map(s => s.id);
-          secondaryPromises.push(
-            supabase.from('attendance')
-              .select('session_id, present')
-              .in('session_id', sessionIds)
-              .then(({ data }) => data)
-          );
-        }
-
-        const secondaryResults = await Promise.all(secondaryPromises);
-        
-        let resultIdx = 0;
-        if (todaySess) {
-          const todayPresent = secondaryResults[resultIdx++];
-          const todayTotal = secondaryResults[resultIdx++];
-          if (todayTotal > 0) {
-            setTodayAttendanceRate(Math.round((todayPresent / todayTotal) * 100));
-          }
-        }
-
-        if (recent && recent.length > 0) {
-          const recentAttendance = secondaryResults[resultIdx++];
-          const enrichedRecent = recent.map(session => {
-            const sessionAttendance = recentAttendance.filter(a => a.session_id === session.id);
-            const present = sessionAttendance.filter(a => a.present).length;
-            const total = sessionAttendance.length;
-            const rate = total > 0 ? Math.round((present / total) * 100) : null;
-            return { ...session, attendanceRate: rate, totalAttendance: total };
-          });
-          setRecentSessions(enrichedRecent);
-        }
-
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setLoading(false);
+      const secondaryPromises = [];
+      if (todaySess) {
+        setTodaySession(todaySess);
+        secondaryPromises.push(
+          supabase.from('attendance').select('present', { count: 'exact', head: true }).eq('session_id', todaySess.id).eq('present', true),
+          supabase.from('attendance').select('id', { count: 'exact', head: true }).eq('session_id', todaySess.id)
+        );
+      } else {
+        setTodaySession(null);
       }
-    }
 
-    fetchDashboardData();
+      if (recent.length > 0) {
+        secondaryPromises.push(
+          supabase.from('attendance').select('session_id, present').in('session_id', recent.map(s => s.id))
+        );
+      }
+
+      const results = await Promise.all(secondaryPromises);
+      let idx = 0;
+
+      if (todaySess) {
+        const tPresent = results[idx++];
+        const tTotal = results[idx++];
+        setTodayAttendanceRate(tTotal.count > 0 ? Math.round((tPresent.count / tTotal.count) * 100) : null);
+      }
+
+      if (recent.length > 0) {
+        const recentAtt = results[idx++]?.data || [];
+        const enriched = recent.map(s => {
+          const sAtt = recentAtt.filter(a => a.session_id === s.id);
+          const present = sAtt.filter(a => a.present).length;
+          const total = sAtt.length;
+          return { ...s, attendanceRate: total > 0 ? Math.round((present / total) * 100) : null, totalAttendance: total };
+        });
+        setRecentSessions(enriched);
+      }
+    } catch (error) {
+      console.error('Dashboard Sync Error:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const statItems = [
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const statItems = useMemo(() => [
     { label: 'Total Sessions', value: loading ? '--' : stats.totalSessions, icon: Calendar },
     { label: 'Overall Attendance', value: loading ? '--' : `${stats.attendanceRate}%`, icon: TrendingUp },
     { label: 'Active Students', value: loading ? '--' : stats.activeStudents, icon: Users },
@@ -138,11 +107,10 @@ export function DashboardPage() {
       value: loading ? '--' : (stats.lastSessionDate ? format(parseISO(stats.lastSessionDate), 'MMM d, yyyy') : 'None'), 
       icon: Clock 
     },
-  ];
+  ], [loading, stats]);
 
   return (
     <div className="flex flex-col gap-12 pb-12 animate-fade-in stagger-children">
-      {/* Hero Section */}
       <section className="flex flex-col gap-2">
         <h1 className="text-display-hero text-fg-primary tracking-tight">
           Welcome Back, {displayName ? displayName.split(' ')[0] : 'Mentor'}
@@ -152,14 +120,11 @@ export function DashboardPage() {
         </p>
       </section>
 
-      {/* Stat Strip */}
       <section>
         <StatStrip items={statItems} />
       </section>
 
-      {/* Grid Row 1 */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Today's Session */}
         <Card hero className="flex flex-col">
           <CardHeader label="Today's Session" />
           {loading ? (
@@ -175,11 +140,6 @@ export function DashboardPage() {
                   <span className="px-2.5 py-1 rounded-md bg-surface-inset text-caption text-fg-secondary border border-border uppercase tracking-wider">
                     {todaySession.type}
                   </span>
-                  {todaySession.material_url && (
-                    <span className="px-2.5 py-1 rounded-md bg-surface-inset text-caption text-info border border-info-border uppercase tracking-wider">
-                      Material Attached
-                    </span>
-                  )}
                 </div>
               </div>
               <div className="mt-auto pt-4 flex gap-3">
@@ -203,7 +163,6 @@ export function DashboardPage() {
           )}
         </Card>
 
-        {/* Today's Attendance */}
         <Card hero className="flex flex-col">
           <CardHeader label="Today's Attendance" />
           <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -241,7 +200,6 @@ export function DashboardPage() {
         </Card>
       </section>
 
-      {/* Grid Row 2 */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="flex flex-col h-full">
           <CardHeader 
@@ -289,56 +247,32 @@ export function DashboardPage() {
           </div>
         </Card>
 
-        {/* Quick Actions / Getting Started */}
         <Card>
           <CardHeader label="Quick Actions" title="Manage Cohort" />
           <div className="grid grid-cols-2 gap-3">
-            <button 
-              onClick={() => navigate('/attendance')}
-              className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-accent-glow hover:bg-surface transition-all text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-accent-glow-soft text-accent-glow flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Calendar className="w-5 h-5" />
-              </div>
+            <button onClick={() => navigate('/attendance')} className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-accent-glow hover:bg-surface transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-accent-glow-soft text-accent-glow flex items-center justify-center group-hover:scale-110 transition-transform"><Calendar className="w-5 h-5" /></div>
               <div>
                 <h3 className="text-body font-medium text-fg-primary">Mark Attendance</h3>
                 <p className="text-caption text-fg-tertiary mt-1 line-clamp-2">Start a new session or update an existing one.</p>
               </div>
             </button>
-            
-            <button 
-              onClick={() => navigate('/upload')}
-              className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-success-border hover:bg-surface transition-all text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-success-bg text-success flex items-center justify-center group-hover:scale-110 transition-transform">
-                <TrendingUp className="w-5 h-5" />
-              </div>
+            <button onClick={() => navigate('/upload')} className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-success-border hover:bg-surface transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-success-bg text-success flex items-center justify-center group-hover:scale-110 transition-transform"><TrendingUp className="w-5 h-5" /></div>
               <div>
                 <h3 className="text-body font-medium text-fg-primary">Import CSV</h3>
                 <p className="text-caption text-fg-tertiary mt-1 line-clamp-2">Bulk upload attendance from G-Meets via AI.</p>
               </div>
             </button>
-            
-            <button 
-              onClick={() => navigate('/materials')}
-              className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-info-border hover:bg-surface transition-all text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-info-bg text-info flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Users className="w-5 h-5" />
-              </div>
+            <button onClick={() => navigate('/materials')} className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-info-border hover:bg-surface transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-info-bg text-info flex items-center justify-center group-hover:scale-110 transition-transform"><Users className="w-5 h-5" /></div>
               <div>
                 <h3 className="text-body font-medium text-fg-primary">Class Materials</h3>
                 <p className="text-caption text-fg-tertiary mt-1 line-clamp-2">Upload slides, code files, and recording links.</p>
               </div>
             </button>
-
-            <button 
-              onClick={() => navigate('/history')}
-              className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-warning-border hover:bg-surface transition-all text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-warning-bg text-warning flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Clock className="w-5 h-5" />
-              </div>
+            <button onClick={() => navigate('/history')} className="p-5 flex flex-col items-start gap-4 rounded-xl bg-surface-inset border border-border hover:border-warning-border hover:bg-surface transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-warning-bg text-warning flex items-center justify-center group-hover:scale-110 transition-transform"><Clock className="w-5 h-5" /></div>
               <div>
                 <h3 className="text-body font-medium text-fg-primary">Student History</h3>
                 <p className="text-caption text-fg-tertiary mt-1 line-clamp-2">View detailed attendance heatmaps per student.</p>
