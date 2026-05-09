@@ -17,31 +17,48 @@ export async function analyzeCsvHeaders(headers, sampleRow, mode = 'attendance')
         Headers: ${JSON.stringify(headers)}
         Sample Data Row: ${JSON.stringify(sampleRow)}
 
-        Task: Identify the column structure for a MATRIX attendance sheet.
-        1. "usnColumn": Find the column containing unique Student IDs or USNs (e.g., values like '4SH24CS001'). Do NOT pick 'Name' columns.
-        2. "dateColumns": Identify ALL columns that represent specific dates or session titles. Usually, these have dates as headers (e.g., '2024-05-01') or session numbers.
-        
-        Constraint: Ignore columns that represent 'Total', 'Percentage', or 'Sl No'.
-        Return format: { "usnColumn": "header_name", "dateColumns": ["date_header_1", "date_header_2"] }
+        Task: Map CSV/Excel headers to student database fields with ZERO CLASHES. 
+        Note: The headers might be flattened versions of multi-row headers (e.g. "Day 1 | Attendance").
+
+        1. "usnColumn": IDENTIFY the unique Student ID column (e.g. 'Admission Number', 'USN', 'Roll No'). 
+           CRITICAL: Look at the Sample Data. Only pick a column if it contains unique alphanumeric IDs.
+        2. "dateColumns": Identify ONLY headers that represent actual attendance sessions. Skip summary or total columns.
+        3. "marksMapping": Map corresponding Knowledge/Skill mark columns to each attendance session.
+        4. "explanation": Provide a rationale starting with "Clash Check: SUCCESS." explaining why this mapping is safe and essential.
+
+        Return format: { 
+          "usnColumn": "header_name", 
+          "dateColumns": ["h1", "h2"],
+          "marksMapping": {
+            "h1": { "knowledge": "h1_k", "skill": "h1_s" }
+          },
+          "explanation": "..."
+        }
       `;
-    } else {
+    }
+ else {
       prompt = `
         Context: Student roster management.
         Headers: ${JSON.stringify(headers)}
         Sample Data Row: ${JSON.stringify(sampleRow)}
 
-        Task: Map CSV headers to student database fields.
-        1. "usnColumn": Unique Identifier (USN, Roll No, ID).
+        Task: Map CSV/Excel headers to student database fields.
+        1. "usnColumn": Unique Identifier (USN, Admission Number, Roll No, ID).
         2. "nameColumn": Full name of the student.
         3. "emailColumn": Personal or institutional email.
-        4. "branchColumn": Branch, Department, or Section.
+        4. "branchColumn": Branch, Department, or Section (e.g. 'CS', 'IS').
 
-        Return format: { "usnColumn": "h1", "nameColumn": "h2", "emailColumn": "h3", "branchColumn": "h4" }
-        If a field is not found, use null.
+        Return format: { 
+          "usnColumn": "h1", 
+          "nameColumn": "h2", 
+          "emailColumn": "h3", 
+          "branchColumn": "h4",
+          "explanation": "Brief explanation of mapping logic."
+        }
       `;
     }
 
-    const result = await model.generateContent(prompt + "\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanations.");
+    const result = await model.generateContent(prompt + "\nIMPORTANT: Return ONLY the raw JSON object. No markdown.");
     const text = result.response.text();
     
     // Safer JSON extraction

@@ -163,8 +163,8 @@ VITE_GEMINI_API_KEY=your-gemini-api-key
 
 | Role | Login | Password |
 |------|-------|----------|
-| Mentor | `nischay@theboringpeople.in` | `hi123` |
-| Student | USN: `4SH24CS001` | `4SH24CS001` |
+| Mentor | Email:  `nischay@theboringpeople.in` | Password: `hi123` |
+| Student | USN: `4SH24CS001` | Password: `4SH24CS001` |
 
 Students log in using the **Student Login** tab with their USN (no `@forge.local` needed — the app appends it automatically).
 

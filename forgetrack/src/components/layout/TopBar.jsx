@@ -55,14 +55,16 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-6">
-        {/* Search button */}
-        <button 
-          onClick={handleSearchClick}
-          className="hidden md:flex items-center gap-2 px-4 h-10 rounded-full bg-surface-inset border border-border text-fg-tertiary hover:text-fg-secondary hover:border-border-strong transition-colors w-64 text-left"
-        >
-          <Search className="w-4 h-4" />
-          <span className="text-body-sm">Search students...</span>
-        </button>
+        {/* Search button - Mentors only */}
+        {role === 'mentor' && (
+          <button 
+            onClick={handleSearchClick}
+            className="hidden md:flex items-center gap-2 px-4 h-10 rounded-full bg-surface-inset border border-border text-fg-tertiary hover:text-fg-secondary hover:border-border-strong transition-colors w-64 text-left"
+          >
+            <Search className="w-4 h-4" />
+            <span className="text-body-sm">Search students...</span>
+          </button>
+        )}
 
         <div className="flex items-center gap-4">
           <button className="text-fg-secondary hover:text-fg-primary transition-colors">

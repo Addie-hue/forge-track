@@ -5,11 +5,14 @@ import { supabase } from '../../lib/supabase';
 import { analyzeCsvHeaders } from '../../lib/gemini';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { DatePicker } from '../../components/ui/DatePicker';
 import { Select } from '../../components/ui/Select';
 import { useToast } from '../../components/ui/ToastProvider';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
-import { Upload, Sparkles, Database, CheckCircle2, AlertCircle, ArrowRight, Calendar } from 'lucide-react';
+import { Upload, Sparkles, Database, CheckCircle2, AlertCircle, ArrowRight, Calendar, FileCode } from 'lucide-react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 export function CsvUploadPage() {
   const { user } = useAuth();
@@ -25,9 +28,11 @@ export function CsvUploadPage() {
   // Data State
   const [parsedData, setParsedData] = useState([]);
   const [headers, setHeaders] = useState([]);
+  const [aiExplanation, setAiExplanation] = useState('');
   const [mapping, setMapping] = useState({ 
-    usnColumn: '', dateColumns: [], nameColumn: '', emailColumn: '', branchColumn: '' 
+    usnColumn: '', dateColumns: [], marksMapping: {}, sessionDates: {}, nameColumn: '', emailColumn: '', branchColumn: '' 
   });
+  const [fallbackDate, setFallbackDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedRowIndices, setSelectedRowIndices] = useState(new Set());
   const [unpivotedData, setUnpivotedData] = useState([]);
   const [validationSummary, setValidationSummary] = useState({ matched: 0, missing: 0, missingUsns: [] });
@@ -38,24 +43,108 @@ export function CsvUploadPage() {
     if (!selectedFile) return;
     setLoading(true);
 
-    Papa.parse(selectedFile, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        processParsedData(results);
-      },
-      error: (err) => {
-        toast.error('Error reading CSV file');
-        setLoading(false);
-      }
-    });
+    const isExcel = selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls');
+
+    if (isExcel) {
+      handleExcelUpload(selectedFile);
+    } else {
+      Papa.parse(selectedFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          processParsedData(results.data, results.meta?.fields?.filter(Boolean) || []);
+        },
+        error: (err) => {
+          toast.error('Error reading CSV file');
+          setLoading(false);
+        }
+      });
+    }
   };
 
-  const processParsedData = async (results) => {
-    const rawData = results.data || [];
-    const csvHeaders = results.meta?.fields?.filter(Boolean) || [];
+  const handleExcelUpload = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Convert to array of arrays first to handle multi-row headers
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        if (rows.length < 2) {
+          toast.error('Excel file is empty or has insufficient data.');
+          setLoading(false);
+          return;
+        }
+
+        // Find the first non-empty row to start analysis
+        let firstDataRowIndex = rows.findIndex(r => r && r.length > 0 && r.some(c => c));
+        if (firstDataRowIndex === -1) {
+          toast.error('Excel file appears to be empty.');
+          setLoading(false);
+          return;
+        }
+
+        const rowA = rows[firstDataRowIndex];
+        const rowB = rows[firstDataRowIndex + 1] || [];
+        
+        let processedHeaders = [];
+        let startRow = firstDataRowIndex + 1;
+
+        // Check if rowA is a "Grouping" row (like Day 1, Day 2) 
+        // and rowB is the "Detail" row (like Attendance, Score)
+        const isGroupingRow = rowA.filter(c => c).length < rowB.filter(c => c).length && rowB.some(c => {
+          const s = String(c).toLowerCase();
+          return s.includes('usn') || s.includes('name') || s.includes('email');
+        });
+
+        if (isGroupingRow) {
+          let lastMainHeader = '';
+          processedHeaders = rowB.map((sub, i) => {
+            if (rowA[i]) lastMainHeader = String(rowA[i]).trim();
+            const subTitle = sub ? String(sub).trim() : '';
+            
+            if (lastMainHeader && subTitle) {
+              // Only prefix if it's an attendance/score column to keep USN/Name clean
+              const isDetail = subTitle.toLowerCase().includes('attendance') || 
+                               subTitle.toLowerCase().includes('score') || 
+                               subTitle.toLowerCase().includes('knowledge') || 
+                               subTitle.toLowerCase().includes('skill');
+              return isDetail ? `${lastMainHeader} | ${subTitle}` : subTitle;
+            }
+            return subTitle || lastMainHeader || `Col ${i}`;
+          });
+          startRow = firstDataRowIndex + 2;
+        } else {
+          processedHeaders = rowA.map((h, i) => h ? String(h).trim() : `Col ${i}`);
+          startRow = firstDataRowIndex + 1;
+        }
+
+        // Convert remaining rows to objects
+        const finalData = rows.slice(startRow).map(row => {
+          const obj = {};
+          processedHeaders.forEach((h, i) => {
+            obj[h] = row[i];
+          });
+          return obj;
+        });
+
+        processParsedData(finalData, processedHeaders);
+      } catch (err) {
+        console.error('Excel Error:', err);
+        toast.error('Failed to parse Excel file.');
+        setLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const processParsedData = async (rawData, csvHeaders) => {
     if (rawData.length === 0 || csvHeaders.length === 0) {
-      toast.error('CSV file appears to be empty.');
+      toast.error('File appears to be empty.');
       setLoading(false);
       return;
     }
@@ -81,11 +170,17 @@ export function CsvUploadPage() {
             ...prev,
             usnColumn: aiMapping.usnColumn || prev.usnColumn,
             dateColumns: Array.isArray(aiMapping.dateColumns) ? aiMapping.dateColumns : prev.dateColumns,
+            marksMapping: aiMapping.marksMapping || {},
             nameColumn: aiMapping.nameColumn || prev.nameColumn,
             emailColumn: aiMapping.emailColumn || prev.emailColumn,
             branchColumn: aiMapping.branchColumn || prev.branchColumn
           }));
+          if (aiMapping.explanation) setAiExplanation(aiMapping.explanation);
+          toast.success('AI Mapping Complete');
         }
+      })
+      .catch(err => {
+        console.error('AI Error:', err);
       })
       .finally(() => {
         setStep(2);
@@ -119,14 +214,50 @@ export function CsvUploadPage() {
         const isExisting = existingUsns.has(usn);
         if (isExisting) matched++; else { missing++; missingUsns.add(usn); }
         
+      if (mapping.dateColumns.length > 0) {
         mapping.dateColumns.forEach(dateCol => {
           const val = row[dateCol]?.toString().trim().toLowerCase();
           const isPresent = val === 'p' || val === 'present' || val === '1' || val === 'true' || (val !== '' && val !== '0' && val !== 'a' && val !== 'absent');
+          
+          // Use manual date mapping if available
+          const manualDate = mapping.sessionDates[dateCol];
+          let dateStr = manualDate;
+          
+          if (!dateStr) {
+            const parsed = new Date(dateCol);
+            dateStr = !isNaN(parsed.getTime()) && parsed.getFullYear() > 2000 
+              ? parsed.toISOString().split('T')[0] 
+              : fallbackDate;
+          }
+
+          // Extract marks if available
+          const kCol = mapping.marksMapping[dateCol]?.knowledge;
+          const sCol = mapping.marksMapping[dateCol]?.skill;
+          const kScore = kCol ? parseFloat(row[kCol]) : null;
+          const sScore = sCol ? parseFloat(row[sCol]) : null;
+
           unpivoted.push({
             usn, name: row[mapping.nameColumn] || usn, email: row[mapping.emailColumn] || null,
-            branch: row[mapping.branchColumn] || 'CS', date: dateCol, present: isPresent, isNew: !isExisting
+            branch: row[mapping.branchColumn] || 'CS', date: dateStr, present: isPresent, 
+            knowledge_score: kScore, skill_score: sScore,
+            isNew: !isExisting,
+            originalHeader: dateCol
           });
         });
+      } else if (importMode === 'attendance' && fallbackDate) {
+        // Handle case where no date columns are selected - use fallback date
+        // Assume the entire row is "Present" or look for an 'Attendance' column
+        const attCol = headers.find(h => h.toLowerCase().includes('attendance')) || headers[0];
+        const val = row[attCol]?.toString().trim().toLowerCase();
+        const isPresent = val === 'p' || val === 'present' || val === '1' || val === 'true' || (val !== '' && val !== '0' && val !== 'a' && val !== 'absent');
+        
+        unpivoted.push({
+          usn, name: row[mapping.nameColumn] || usn, email: row[mapping.emailColumn] || null,
+          branch: row[mapping.branchColumn] || 'CS', date: fallbackDate, present: isPresent, 
+          knowledge_score: null, skill_score: null,
+          isNew: !isExisting
+        });
+      }
       });
 
       setUnpivotedData(unpivoted);
@@ -147,7 +278,14 @@ export function CsvUploadPage() {
         const seenUsns = new Set();
         unpivotedData.filter((_, index) => selectedRowIndices.has(index)).forEach(r => {
           if (!seenUsns.has(r.usn)) {
-            uniqueStudents.push({ usn: r.usn, name: r.name, email: r.email, branch_code: r.branch, is_active: true });
+            uniqueStudents.push({ 
+              usn: r.usn, 
+              name: r.name || r.usn, 
+              email: r.email, 
+              branch_code: r.branch || 'CS', 
+              is_active: true,
+              batch: '2024-2028'
+            });
             seenUsns.add(r.usn);
           }
         });
@@ -163,14 +301,38 @@ export function CsvUploadPage() {
 
         const uniqueDates = [...new Set(unpivotedData.filter((_, index) => selectedRowIndices.has(index)).map(r => r.date))];
         const sessionIds = {};
-        for (const colName of uniqueDates) {
+        
+        // Base date for sequential "Day X" sessions
+        let baseDate = new Date(fallbackDate);
+        if (isNaN(baseDate.getTime())) baseDate = new Date();
+
+        for (let i = 0; i < uniqueDates.length; i++) {
+          const colName = uniqueDates[i];
           const parsed = new Date(colName);
-          const dateStr = !isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+          let dateStr;
+
+          if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
+            dateStr = parsed.toISOString().split('T')[0];
+          } else {
+            // Sequential dates: Base Date + i days
+            const nextDate = new Date(baseDate);
+            nextDate.setDate(baseDate.getDate() + i);
+            dateStr = nextDate.toISOString().split('T')[0];
+          }
+
           const { data, error } = await supabase
             .from('sessions')
-            .upsert({ date: dateStr, topic: `Imported: ${colName}`, month_number: new Date(dateStr).getMonth() + 1 }, { onConflict: 'date' })
+            .upsert({ 
+              date: dateStr, 
+              topic: colName.includes('|') ? colName : `Session: ${colName}`, 
+              month_number: new Date(dateStr).getMonth() + 1 
+            }, { onConflict: 'date' })
             .select('id').single();
-          if (error) throw error;
+            
+          if (error) {
+            console.error('Session Error:', error);
+            throw new Error(`Failed to create session for ${colName}: ${error.message}`);
+          }
           sessionIds[colName] = data.id;
         }
 
@@ -180,6 +342,8 @@ export function CsvUploadPage() {
             student_id: usnToId[record.usn],
             session_id: sessionIds[record.date],
             present: record.present,
+            knowledge_score: record.knowledge_score,
+            skill_score: record.skill_score,
             marked_by: user.id
           })).filter(r => r.student_id && r.session_id);
 
@@ -233,11 +397,11 @@ export function CsvUploadPage() {
             <button onClick={() => setImportMode('roster')} className={`px-4 py-2 rounded-md text-body-sm font-medium transition-all ${importMode === 'roster' ? 'bg-accent-glow text-black' : 'text-fg-tertiary'}`}>Student Roster</button>
           </div>
           <Card className="flex flex-col items-center justify-center py-20 border-dashed border-2 bg-surface-inset hover:bg-surface hover:border-accent-glow transition-all cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-            <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} disabled={loading} />
+            <input type="file" accept=".csv, .xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} disabled={loading} />
             <div className="w-20 h-20 rounded-full bg-accent-glow-soft text-accent-glow flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg shadow-accent-glow/5">
               {loading ? <Sparkles className="w-8 h-8 animate-spin" /> : <Upload className="w-8 h-8" />}
             </div>
-            <h3 className="text-h3 font-display text-fg-primary mb-2">{loading ? 'AI analyzing...' : 'Click to upload CSV'}</h3>
+            <h3 className="text-h3 font-display text-fg-primary mb-2">{loading ? 'AI analyzing...' : 'Click to upload CSV or Excel'}</h3>
             <p className="text-caption text-fg-tertiary">We'll automatically map your columns using Gemini AI.</p>
           </Card>
         </>
@@ -245,6 +409,20 @@ export function CsvUploadPage() {
 
       {step === 2 && (
         <div className="flex flex-col gap-6 animate-slide-up">
+          {aiExplanation && (
+            <Card className="border-accent-glow/20 bg-accent-glow-soft/5 p-4">
+              <div className="flex items-start gap-4">
+                <div className="w-8 h-8 rounded-full bg-accent-glow-soft text-accent-glow flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-micro uppercase text-accent-glow font-bold">AI Rationale & Data Health</span>
+                  <p className="text-caption text-fg-secondary italic">{aiExplanation}</p>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Header Actions */}
           <div className="flex items-center justify-between">
             <div className="flex flex-col"><h2 className="text-h3 font-display text-fg-primary">Review & Approve</h2><p className="text-caption text-fg-tertiary">Total Rows: {parsedData.length}</p></div>
@@ -282,12 +460,143 @@ export function CsvUploadPage() {
             </div>
           </Card>
 
+          {importMode === 'attendance' && mapping.dateColumns.length > 0 && (
+            <Card className="flex flex-col gap-4 border-border-strong bg-surface/50">
+              <div className="flex flex-col gap-1">
+                <label className="text-label uppercase text-fg-secondary font-bold">Assign Dates to Columns</label>
+                <p className="text-caption text-fg-tertiary">Confirm the exact date for each selected session column.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {mapping.dateColumns.map(col => (
+                  <div key={col} className="p-3 rounded-lg bg-surface-inset border border-border flex flex-col gap-2">
+                    <span className="text-caption font-bold text-fg-primary truncate" title={col}>{col}</span>
+                    <DatePicker 
+                      value={mapping.sessionDates[col] || (new Date(col).getFullYear() > 2000 ? new Date(col).toISOString().split('T')[0] : fallbackDate)} 
+                      onChange={(e) => {
+                        setMapping(prev => ({
+                          ...prev,
+                          sessionDates: { ...prev.sessionDates, [col]: e.target.value }
+                        }));
+                        setTimeout(updateValidation, 0);
+                      }}
+                      className="h-9 text-[11px]"
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {importMode === 'attendance' && mapping.dateColumns.length === 0 && (
+            <Card className="border-warning-border/30 bg-warning-bg/5 p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-warning-bg/20 text-warning flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-body font-bold text-warning">No Date Columns Detected</h4>
+                  <p className="text-caption text-fg-tertiary">Please select a fallback date for this import.</p>
+                </div>
+                <DatePicker 
+                  value={fallbackDate} 
+                  onChange={(e) => {
+                    setFallbackDate(e.target.value);
+                    // Trigger a re-validation to update the unpivoted data with the new date
+                    setTimeout(updateValidation, 0);
+                  }}
+                  className="max-w-[220px]"
+                />
+              </div>
+            </Card>
+          )}
+
           {importMode === 'attendance' && (
-            <Card className="flex flex-col gap-4 border-accent-glow/20 bg-accent-glow-soft/5">
-              <label className="text-label uppercase text-accent-glow flex items-center gap-2 font-bold"><Calendar className="w-4 h-4" /> Select Attendance Session Columns</label>
-              <div className="flex flex-wrap gap-2">
-                {(headers || []).filter(h => h !== mapping?.usnColumn && !isAttributeColumn(h)).map((header) => (
-                  <button key={header} onClick={() => setMapping(prev => ({ ...prev, dateColumns: prev.dateColumns.includes(header) ? prev.dateColumns.filter(c => c !== header) : [...prev.dateColumns, header] }))} className={`px-3 py-1.5 rounded-md text-caption font-medium border transition-all ${mapping?.dateColumns?.includes(header) ? 'bg-accent-glow border-accent-glow text-black' : 'bg-surface border-border text-fg-tertiary'}`}>{header}</button>
+            <Card className="flex flex-col gap-6 border-accent-glow/20 bg-accent-glow-soft/5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-label uppercase text-accent-glow flex items-center gap-2 font-bold">
+                    <Calendar className="w-4 h-4" /> Map Attendance Sessions
+                  </label>
+                  <p className="text-caption text-fg-tertiary">Select columns that represent class sessions. Marks (K/S) will be linked automatically.</p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => {
+                      const detected = headers.filter(h => h.toLowerCase().includes('attendance') || /\d{4}-\d{2}-\d{2}/.test(h));
+                      setMapping(prev => ({ ...prev, dateColumns: detected }));
+                    }}
+                    className="text-micro border-border-strong h-8"
+                  >
+                    Select All Detected
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setMapping(prev => ({ ...prev, dateColumns: [] }))}
+                    className="text-micro border-border-strong h-8"
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Group columns by Day or Category */}
+                {Object.entries(
+                  headers
+                    .filter(h => h !== mapping?.usnColumn && !isAttributeColumn(h))
+                    .reduce((groups, h) => {
+                      const prefix = h.includes('|') ? h.split('|')[0].trim() : 'General';
+                      if (!groups[prefix]) groups[prefix] = [];
+                      groups[prefix].push(h);
+                      return groups;
+                    }, {})
+                ).map(([group, groupHeaders]) => (
+                  <div key={group} className="flex flex-col gap-2 p-3 rounded-xl bg-surface/40 border border-border/50">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-micro uppercase font-bold text-fg-secondary tracking-widest">{group}</span>
+                      <button 
+                        onClick={() => {
+                          const allInGroup = groupHeaders;
+                          const current = new Set(mapping.dateColumns);
+                          const someMissing = allInGroup.some(h => !current.has(h));
+                          if (someMissing) allInGroup.forEach(h => current.add(h));
+                          else allInGroup.forEach(h => current.delete(h));
+                          setMapping(prev => ({ ...prev, dateColumns: Array.from(current) }));
+                        }}
+                        className="text-[9px] text-accent-glow hover:underline uppercase font-bold"
+                      >
+                        Toggle Group
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupHeaders.map((header) => {
+                        const isAttendance = header.toLowerCase().includes('attendance');
+                        const isSelected = mapping?.dateColumns?.includes(header);
+                        
+                        return (
+                          <button 
+                            key={header} 
+                            onClick={() => setMapping(prev => ({ ...prev, dateColumns: prev.dateColumns.includes(header) ? prev.dateColumns.filter(c => c !== header) : [...prev.dateColumns, header] }))} 
+                            className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium border transition-all truncate max-w-full ${
+                              isSelected 
+                                ? 'bg-accent-glow border-accent-glow text-black' 
+                                : isAttendance 
+                                  ? 'bg-accent-glow-soft/10 border-accent-glow/30 text-fg-secondary hover:border-accent-glow'
+                                  : 'bg-surface border-border text-fg-tertiary hover:border-border-strong'
+                            }`}
+                            title={header}
+                          >
+                            {header.includes('|') ? header.split('|')[1].trim() : header}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
               </div>
             </Card>

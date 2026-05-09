@@ -40,12 +40,15 @@ export function MarkAttendancePage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
   useEffect(() => {
-    if (date !== format(new Date(), 'yyyy-MM-dd')) {
-      setSearchParams({ date });
-    } else {
-      setSearchParams({});
+    const currentParam = searchParams.get('date');
+    if (date !== currentParam) {
+      if (date === format(new Date(), 'yyyy-MM-dd')) {
+        setSearchParams({}, { replace: true });
+      } else {
+        setSearchParams({ date }, { replace: true });
+      }
     }
-  }, [date, setSearchParams]);
+  }, [date, searchParams, setSearchParams]);
 
   // 1. Fetch all active students once
   const fetchStudents = useCallback(async () => {
@@ -261,10 +264,17 @@ export function MarkAttendancePage() {
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-dot-grid relative">
               <div className="relative z-10 flex flex-col items-center">
                 <div className="w-20 h-20 bg-surface-raised border border-border rounded-3xl flex items-center justify-center mb-6 shadow-xl rotate-3">
-                  <CheckSquare className="w-8 h-8 text-accent-glow" />
+                  <Calendar className="w-8 h-8 text-accent-glow" />
                 </div>
-                <h3 className="text-h3 font-display text-fg-primary mb-3">Roster Locked</h3>
-                <p className="text-body text-fg-secondary max-w-sm">Select a session from the history above or create a new one to unlock the attendance sheet.</p>
+                <h3 className="text-h3 font-display text-fg-primary mb-3">No Session on {format(parseISO(date), 'MMM d, yyyy')}</h3>
+                <p className="text-body text-fg-secondary max-w-sm mb-8">There is no attendance record for this date yet. Would you like to create one?</p>
+                <Button 
+                  size="lg" 
+                  onClick={() => setShowNewSessionForm(true)} 
+                  className="bg-accent-glow text-black font-bold h-14 px-10 rounded-xl shadow-xl shadow-accent-glow/20"
+                >
+                  <Plus className="w-5 h-5 mr-2" /> Create Session for {format(parseISO(date), 'MMM d')}
+                </Button>
               </div>
             </div>
           ) : (

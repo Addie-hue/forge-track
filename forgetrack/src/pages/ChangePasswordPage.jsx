@@ -36,12 +36,10 @@ export function ChangePasswordPage() {
       await changePassword(newPassword);
       toast.success('Password updated successfully!');
       
-      // Redirect based on role
-      if (role === 'mentor') {
-        navigate('/dashboard');
-      } else {
-        navigate('/me/attendance');
-      }
+      // Give a tiny moment for AuthContext state to stabilize
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
     } catch (err) {
       setError(err.message || 'Failed to update password. Please try again.');
     } finally {

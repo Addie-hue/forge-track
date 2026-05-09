@@ -18,7 +18,10 @@ export function MyAttendancePage() {
 
   useEffect(() => {
     async function fetchAttendance() {
-      if (!studentId) return;
+      if (!studentId) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         // Fetch student info, all sessions, and attendance in parallel
@@ -29,7 +32,7 @@ export function MyAttendancePage() {
         ] = await Promise.all([
           supabase.from('students').select('*').eq('id', studentId).single(),
           supabase.from('sessions').select('id, date, topic, session_type').order('date', { ascending: false }),
-          supabase.from('attendance').select('session_id, present').eq('student_id', studentId)
+          supabase.from('attendance').select('session_id, present, knowledge_score, skill_score').eq('student_id', studentId)
         ]);
           
         if (stuError) throw stuError;
@@ -42,9 +45,11 @@ export function MyAttendancePage() {
 
         // Map attendance to sessions
         const attMap = {};
+        const historyMap = {};
         if (attendance) {
           attendance.forEach(a => {
             attMap[a.session_id] = a.present;
+            historyMap[a.session_id] = a;
           });
         }
 
@@ -53,13 +58,18 @@ export function MyAttendancePage() {
 
         const mergedHistory = (allSessions || []).map(sess => {
           const present = attMap[sess.id];
+          const knowledge_score = historyMap[sess.id]?.knowledge_score;
+          const skill_score = historyMap[sess.id]?.skill_score;
+
           if (present !== undefined) {
             totalCount++;
             if (present) presentCount++;
           }
           return {
             ...sess,
-            present: present // undefined means unmarked
+            present: present, // undefined means unmarked
+            knowledge_score,
+            skill_score
           };
         });
 
@@ -150,59 +160,88 @@ export function MyAttendancePage() {
         </Card>
       </section>
 
-      <section>
-        <Card className="p-0 overflow-hidden">
-          <CardHeader label="Log" title="Detailed History" className="p-6 border-b border-border bg-surface-inset/30" />
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow hover={false}>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Session Topic</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow hover={false}>
-                    <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">Loading history...</TableCell>
-                  </TableRow>
-                ) : history.length === 0 ? (
-                  <TableRow hover={false}>
-                    <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">No sessions recorded yet.</TableCell>
-                  </TableRow>
-                ) : (
-                  history.map((sess) => (
-                    <TableRow key={sess.id}>
-                      <TableCell className="font-mono text-body-sm text-fg-secondary">
-                        {format(parseISO(sess.date), 'MMM d, yyyy')}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {sess.topic}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-micro uppercase text-fg-tertiary tracking-wider bg-surface-inset px-2 py-1 rounded">
-                          {sess.session_type}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {sess.present === true ? (
-                          <StatusPill variant="success">Present</StatusPill>
-                        ) : sess.present === false ? (
-                          <StatusPill variant="danger">Absent</StatusPill>
-                        ) : (
-                          <span className="text-caption text-fg-tertiary italic">Pending</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
       </section>
+      
+      {!studentId && !loading && (
+        <Card className="border-warning-border bg-warning-bg/5 flex flex-col items-center justify-center p-12 text-center">
+          <div className="w-16 h-16 rounded-full bg-warning-bg text-warning flex items-center justify-center mb-6">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-h2 font-display text-fg-primary mb-2">Profile Not Linked</h2>
+          <p className="text-body text-fg-secondary max-w-md">
+            Your account is authenticated, but it hasn't been linked to a student record yet. 
+            Please contact your mentor to sync your USN.
+          </p>
+        </Card>
+      )}
+
+      {studentId && (
+        <section>
+          <Card className="p-0 overflow-hidden">
+            <CardHeader label="Log" title="Detailed History" className="p-6 border-b border-border bg-surface-inset/30" />
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow hover={false}>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Session Topic</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Marks (K/S)</TableHead>
+                    <TableHead className="text-right">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow hover={false}>
+                      <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">Loading history...</TableCell>
+                    </TableRow>
+                  ) : history.length === 0 ? (
+                    <TableRow hover={false}>
+                      <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">No sessions recorded yet.</TableCell>
+                    </TableRow>
+                  ) : (
+                    history.map((sess) => (
+                      <TableRow key={sess.id}>
+                        <TableCell className="font-mono text-body-sm text-fg-secondary">
+                          {format(parseISO(sess.date), 'MMM d, yyyy')}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {sess.topic}
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-micro uppercase text-fg-tertiary tracking-wider bg-surface-inset px-2 py-1 rounded">
+                            {sess.session_type}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {sess.knowledge_score !== null || sess.skill_score !== null ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-caption font-bold text-accent-glow">{sess.knowledge_score ?? '-'}</span>
+                              <span className="text-fg-tertiary">/</span>
+                              <span className="text-caption font-bold text-success">{sess.skill_score ?? '-'}</span>
+                            </div>
+                          ) : (
+                            <span className="text-caption text-fg-tertiary opacity-40">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {sess.present === true ? (
+                            <StatusPill variant="success">Present</StatusPill>
+                          ) : sess.present === false ? (
+                            <StatusPill variant="danger">Absent</StatusPill>
+                          ) : (
+                            <span className="text-caption text-fg-tertiary italic">Pending</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        </section>
+      )}
     </div>
   );
 }

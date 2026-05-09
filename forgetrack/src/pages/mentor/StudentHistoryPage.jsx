@@ -82,15 +82,17 @@ export function StudentHistoryPage() {
       // Parallel fetch with specific column selection for speed
       const [sessRes, attRes] = await Promise.all([
         supabase.from('sessions').select('id, date, topic, session_type').order('date', { ascending: false }),
-        supabase.from('attendance').select('session_id, present').eq('student_id', selectedStudent.id)
+        supabase.from('attendance').select('session_id, present, knowledge_score, skill_score').eq('student_id', selectedStudent.id)
       ]);
         
       if (sessRes.error) throw sessRes.error;
       if (attRes.error) throw attRes.error;
 
       const attMap = {};
+      const historyMap = {};
       (attRes.data || []).forEach(a => {
         attMap[a.session_id] = a.present;
+        historyMap[a.session_id] = a;
       });
 
       let presentCount = 0;
@@ -98,11 +100,14 @@ export function StudentHistoryPage() {
 
       const merged = (sessRes.data || []).map(sess => {
         const present = attMap[sess.id];
+        const knowledge_score = historyMap[sess.id]?.knowledge_score;
+        const skill_score = historyMap[sess.id]?.skill_score;
+        
         if (present !== undefined) {
           totalCount++;
           if (present) presentCount++;
         }
-        return { ...sess, present };
+        return { ...sess, present, knowledge_score, skill_score };
       });
 
       setHistory(merged);
@@ -339,6 +344,7 @@ export function StudentHistoryPage() {
                       <TableHead>Date</TableHead>
                       <TableHead>Session Topic</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Marks (K/S)</TableHead>
                       <TableHead className="text-right">Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -367,6 +373,17 @@ export function StudentHistoryPage() {
                             }`}>
                               {sess.session_type}
                             </span>
+                          </TableCell>
+                          <TableCell>
+                            {sess.knowledge_score !== null || sess.skill_score !== null ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-caption font-bold text-accent-glow">{sess.knowledge_score ?? '-'}</span>
+                                <span className="text-fg-tertiary">/</span>
+                                <span className="text-caption font-bold text-success">{sess.skill_score ?? '-'}</span>
+                              </div>
+                            ) : (
+                              <span className="text-caption text-fg-tertiary opacity-40">-</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {sess.present === true ? (
