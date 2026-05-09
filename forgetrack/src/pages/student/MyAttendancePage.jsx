@@ -159,8 +159,6 @@ export function MyAttendancePage() {
           </div>
         </Card>
       </section>
-
-      </section>
       
       {!studentId && !loading && (
         <Card className="border-warning-border bg-warning-bg/5 flex flex-col items-center justify-center p-12 text-center">
@@ -193,11 +191,11 @@ export function MyAttendancePage() {
                 <TableBody>
                   {loading ? (
                     <TableRow hover={false}>
-                      <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">Loading history...</TableCell>
+                      <TableCell colSpan={5} className="h-32 text-center text-fg-tertiary">Loading history...</TableCell>
                     </TableRow>
                   ) : history.length === 0 ? (
                     <TableRow hover={false}>
-                      <TableCell colSpan={4} className="h-32 text-center text-fg-tertiary">No sessions recorded yet.</TableCell>
+                      <TableCell colSpan={5} className="h-32 text-center text-fg-tertiary">No sessions recorded yet.</TableCell>
                     </TableRow>
                   ) : (
                     history.map((sess) => (
